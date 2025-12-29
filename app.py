@@ -12,81 +12,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for modal overlay
-st.markdown("""
-<style>
-.modal-overlay {
-    display: none;
-    position: fixed;
-    z-index: 9999;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0,0,0,0.6);
-}
-
-.modal-content {
-    background-color: #fefefe;
-    margin: 5% auto;
-    padding: 30px;
-    border: 1px solid #888;
-    border-radius: 10px;
-    width: 80%;
-    max-width: 800px;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-}
-
-.close-modal {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-    line-height: 20px;
-}
-
-.close-modal:hover,
-.close-modal:focus {
-    color: #000;
-}
-
-.info-button {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 5px;
-    color: #0066cc;
-}
-
-.info-button:hover {
-    color: #0052a3;
-}
-</style>
-
-<script>
-function showModal() {
-    document.getElementById('infoModal').style.display = 'block';
-}
-
-function closeModal() {
-    document.getElementById('infoModal').style.display = 'none';
-}
-
-// Close modal if user clicks outside of it
-window.onclick = function(event) {
-    var modal = document.getElementById('infoModal');
-    if (event.target == modal) {
-        modal.style.display = 'none';
-    }
-}
-</script>
-""", unsafe_allow_html=True)
-
 # Load models and scaler
 @st.cache_resource
 def load_models():
@@ -204,6 +129,8 @@ def check_out_of_range(param_name, value):
 # Initialize session state
 if 'page' not in st.session_state:
     st.session_state.page = 'instructions'
+if 'show_info' not in st.session_state:
+    st.session_state.show_info = False
 
 # Instructions Page
 if st.session_state.page == 'instructions':
@@ -308,7 +235,7 @@ else:
             # Show AC Modulus (auto-calculated, not editable)
             st.info(f"AC Modulus: {ac_modulus:.0f} ksi (auto-calculated from mix selection)")
             
-            rap_percent = st.slider("RAP Content (%)", 0, 50, 15, 5)
+            rap_percent = st.number_input("RAP Content (%)", min_value=0, max_value=30, value=0, step=5)
         
         with col2:
             st.markdown("### Pavement Structure")
@@ -322,7 +249,7 @@ else:
                 [8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0], 
                 index=4
             )
-            base_modulus = st.number_input("Base Modulus (ksi)", min_value=30, max_value=300, value=37, step=5)
+            base_modulus = st.number_input("Base Modulus (ksi)", min_value=30, max_value=300, value=37, step=30)
             subgrade_modulus = st.number_input("Subgrade Modulus (ksi)", min_value=5, max_value=20, value=10, step=5)
         
         with col3:
@@ -340,6 +267,8 @@ else:
                 st.info(f"Total ESALs: {total_esals:,}")
             else:
                 total_esals = st.number_input("Total Design ESALs", 100000, 10000000, 2000000, 100000)
+            
+            st.caption("📊 Models were trained using 6,749 ESALs/month. Predictions with significantly different traffic levels may be less reliable.")
         
         # Check for out-of-range values
         warnings = []
@@ -438,35 +367,50 @@ else:
             st.markdown("---")
             
             # Header with info button
-            col_header1, col_header2 = st.columns([0.95, 0.05])
-            with col_header1:
+            col_header, col_info_button = st.columns([0.95, 0.05])
+            with col_header:
                 st.markdown("## Prediction Results")
-            with col_header2:
-                st.markdown("""
-                <button class="info-button" onclick="showModal()">ℹ️</button>
-                """, unsafe_allow_html=True)
+            with col_info_button:
+                if st.button("ℹ️", key="info_toggle"):
+                    st.session_state.show_info = not st.session_state.show_info
             
-            # Modal overlay
-            st.markdown(f"""
-            <div id="infoModal" class="modal-overlay">
-                <div class="modal-content">
-                    <span class="close-modal" onclick="closeModal()">&times;</span>
-                    <h2>Model Confidence Information</h2>
-                    <p><strong>Confidence Level:</strong> {preds['confidence']}</p>
-                    <p><strong>Model Spread:</strong> {preds['spread']:.2f}%</p>
-                    <hr>
-                    <h3>What does this mean?</h3>
-                    <ul>
-                        <li><strong>High Confidence</strong> (spread &lt; 5%): Models agree closely, prediction is highly reliable</li>
-                        <li><strong>Medium Confidence</strong> (spread 5-10%): Moderate agreement, prediction is reasonably reliable</li>
-                        <li><strong>Low Confidence</strong> (spread &gt; 10%): Models disagree, use caution with prediction</li>
-                    </ul>
-                    <p><em>Model spread = difference between highest and lowest model prediction</em></p>
-                    <br>
-                    <button onclick="closeModal()" style="padding: 10px 20px; background-color: #0066cc; color: white; border: none; border-radius: 5px; cursor: pointer;">Close</button>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Expandable info section
+            if st.session_state.show_info:
+                with st.expander("Model Confidence Information", expanded=True):
+                    st.markdown("### Understanding Model Confidence")
+                    st.markdown(f"**Current Confidence Level:** {preds['confidence']}")
+                    st.markdown(f"**Model Spread:** {preds['spread']:.2f}%")
+                    
+                    st.markdown("""
+                    ---
+                    **Confidence Levels:**
+                    
+                    - **High Confidence** (Model Spread < 5%):
+                      - All three models agree closely on the prediction
+                      - The prediction is highly reliable
+                      - You can proceed with confidence in the results
+                    
+                    - **Medium Confidence** (Model Spread 5-10%):
+                      - Models show moderate agreement
+                      - The prediction is reasonably reliable
+                      - Consider the results carefully and verify assumptions
+                    
+                    - **Low Confidence** (Model Spread > 10%):
+                      - Models disagree significantly
+                      - Use caution when interpreting results
+                      - May indicate inputs outside typical training ranges
+                      - Consider consulting with a pavement engineer
+                    
+                    **Model Spread** is calculated as the difference between the highest and lowest individual model predictions. A smaller spread indicates better agreement among the models.
+                    
+                    ---
+                    **Individual Model Predictions:**
+                    - **XGBoost**: Excellent at capturing complex interactions
+                    - **LightGBM**: Fast and efficient with good generalization
+                    - **Random Forest**: Robust against outliers and overfitting
+                    
+                    The final prediction is the average of all three models, which provides a more robust estimate than any single model.
+                    """)
             
             col1, col2, col3 = st.columns(3)
             
@@ -515,6 +459,8 @@ else:
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
+            
+            # SENSITIVITY ANALYSIS
             st.markdown("---")
             st.markdown("## Sensitivity Analysis")
             st.caption("Shows how changing key parameters affects predicted cracking")
