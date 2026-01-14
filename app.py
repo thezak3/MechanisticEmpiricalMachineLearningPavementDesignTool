@@ -203,7 +203,7 @@ else:
         st.stop()
     
     # Create tabs
-    tab1, tab2 = st.tabs(["Design Input", "Design Comparison Tool"])
+    tab1, tab2, tab3 = st.tabs(["Design Input", "Design Comparison Tool", "Batch Processing"])
     
     # ============================================================================
     # TAB 1: DESIGN INPUT
@@ -768,6 +768,273 @@ else:
                 st.markdown(f"- Increasing AC thickness by 1 inch reduces cracking by **{reduction:.2f}%**")
                 st.markdown(f"- Decreasing AC thickness by 1 inch increases cracking by **{increase:.2f}%**")
                 st.markdown(f"- Difference between beefed-up and thinned designs: **{thinned_final - beefed_final:.2f}%**")
+    
+    # ============================================================================
+    # TAB 3: BATCH PROCESSING
+    # ============================================================================
+    with tab3:
+        st.title("Batch Processing Tool")
+        st.markdown("Upload a CSV file with multiple design cases to get predictions for all at once")
+        
+        # Show template
+        with st.expander("📋 CSV Template and Instructions"):
+            st.markdown("""
+            ### Required Columns:
+            Your CSV must have these columns (exact names):
+            
+            - `Design_Life_Years` - 5, 10, 15, or 20
+            - `AC_Thickness` - 4.0 to 7.0 inches
+            - `Base_Thickness` - 8.0 to 24.0 inches
+            - `Base_Modulus` - 36.5 to 250 ksi
+            - `Subgrade_Modulus` - 5.0 to 20.0 ksi
+            - `RAP_Percent` - 0 to 30
+            - `Total_ESALs` - Total design ESALs
+            - `PG_Grade` - e.g., "64-22", "70-22", "76-22", "64-28", "70-28"
+            - `Mix_Type` - e.g., "Type B", "Type C", "Type D", "Superpave B", etc.
+            
+            ### Optional Column:
+            - `Case_Name` - Give each case a descriptive name (e.g., "Highway 290 Alternative 1")
+            """)
+            
+            # Create template dataframe
+            template_data = {
+                'Case_Name': ['Example 1', 'Example 2', 'Example 3'],
+                'Design_Life_Years': [20, 15, 10],
+                'AC_Thickness': [5.5, 6.0, 4.5],
+                'Base_Thickness': [16.0, 18.0, 12.0],
+                'Base_Modulus': [37, 100, 150],
+                'Subgrade_Modulus': [10, 8, 12],
+                'RAP_Percent': [15, 20, 0],
+                'Total_ESALs': [2000000, 5000000, 1000000],
+                'PG_Grade': ['64-22', '70-22', '76-22'],
+                'Mix_Type': ['Type B', 'Type C', 'Type D']
+            }
+            template_df = pd.DataFrame(template_data)
+            
+            st.dataframe(template_df, use_container_width=True)
+            
+            # Download template button
+            csv_template = template_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Template CSV",
+                data=csv_template,
+                file_name="batch_input_template.csv",
+                mime="text/csv"
+            )
+        
+        # File upload
+        uploaded_file = st.file_uploader("Upload your CSV file", type=['csv'])
+        
+        if uploaded_file is not None:
+            try:
+                # Read CSV
+                batch_df = pd.read_csv(uploaded_file)
+                
+                st.success(f"✅ Loaded {len(batch_df)} cases from file")
+                
+                # Show preview
+                with st.expander("Preview uploaded data"):
+                    st.dataframe(batch_df.head(10), use_container_width=True)
+                
+                # Validate required columns
+                required_cols = ['Design_Life_Years', 'AC_Thickness', 'Base_Thickness', 
+                               'Base_Modulus', 'Subgrade_Modulus', 'RAP_Percent', 
+                               'Total_ESALs', 'PG_Grade', 'Mix_Type']
+                
+                missing_cols = [col for col in required_cols if col not in batch_df.columns]
+                
+                if missing_cols:
+                    st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
+                    st.stop()
+                
+                # Add Case_Name if not present
+                if 'Case_Name' not in batch_df.columns:
+                    batch_df['Case_Name'] = [f"Case {i+1}" for i in range(len(batch_df))]
+                
+                # Process button
+                if st.button("🚀 Run Batch Predictions", type="primary"):
+                    results_list = []
+                    
+                    # Progress bar
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for idx, row in batch_df.iterrows():
+                        status_text.text(f"Processing {row['Case_Name']} ({idx+1}/{len(batch_df)})...")
+                        
+                        try:
+                            # Get binder parameters
+                            pg_grade = row['PG_Grade']
+                            mix_type = row['Mix_Type']
+                            
+                            if (pg_grade, mix_type) not in binder_data:
+                                results_list.append({
+                                    'Case_Name': row['Case_Name'],
+                                    'Status': 'ERROR',
+                                    'Error': f"Invalid PG/Mix combination: {pg_grade} + {mix_type}"
+                                })
+                                continue
+                            
+                            A_raw, n = binder_data[(pg_grade, mix_type)]
+                            A_scaled = A_raw * 1e6
+                            
+                            # Get AC Modulus
+                            ac_modulus = ac_modulus_lookup.get((pg_grade, mix_type), DEFAULT_AC_MODULUS)
+                            
+                            # Calculate months and ESALs
+                            months = int(row['Design_Life_Years'] * 12)
+                            cumulative_monthly_esals = (row['Total_ESALs'] / 240) * months
+                            
+                            # Prepare inputs
+                            inputs_dict = {
+                                'Pavement_Age_Months': months,
+                                'Cumulative_Monthly_ESALs': cumulative_monthly_esals,
+                                'AC_Thickness': row['AC_Thickness'],
+                                'RAP_Percent': row['RAP_Percent'],
+                                'A': A_scaled,
+                                'n': n,
+                                'AC_Modulus_ksi': ac_modulus,
+                                'Base_Thickness': row['Base_Thickness'],
+                                'Base_Modulus': row['Base_Modulus'],
+                                'Subgrade_Modulus': row['Subgrade_Modulus']
+                            }
+                            
+                            # Make prediction
+                            pred_xgb, pred_lgb, pred_rf = predict_cracking(
+                                inputs_dict, scaler, xgb_model, lgb_model, rf_model
+                            )
+                            avg_pred = (pred_xgb + pred_lgb + pred_rf) / 3
+                            
+                            # Calculate confidence
+                            model_spread = max(pred_xgb, pred_lgb, pred_rf) - min(pred_xgb, pred_lgb, pred_rf)
+                            if model_spread < 5:
+                                confidence = "High"
+                            elif model_spread < 10:
+                                confidence = "Medium"
+                            else:
+                                confidence = "Low"
+                            
+                            # Determine status
+                            if avg_pred < 15:
+                                status = "Good"
+                            elif avg_pred <= 30:
+                                status = "Acceptable"
+                            else:
+                                status = "Early Failure"
+                            
+                            # Store results
+                            results_list.append({
+                                'Case_Name': row['Case_Name'],
+                                'Design_Life_Years': row['Design_Life_Years'],
+                                'AC_Thickness': row['AC_Thickness'],
+                                'Base_Thickness': row['Base_Thickness'],
+                                'RAP_Percent': row['RAP_Percent'],
+                                'Total_ESALs': row['Total_ESALs'],
+                                'PG_Grade': pg_grade,
+                                'Mix_Type': mix_type,
+                                'Predicted_Cracking_%': round(avg_pred, 2),
+                                'XGBoost_%': round(pred_xgb, 2),
+                                'LightGBM_%': round(pred_lgb, 2),
+                                'RandomForest_%': round(pred_rf, 2),
+                                'Design_Status': status,
+                                'Model_Confidence': confidence,
+                                'Model_Spread_%': round(model_spread, 2)
+                            })
+                            
+                        except Exception as e:
+                            results_list.append({
+                                'Case_Name': row['Case_Name'],
+                                'Status': 'ERROR',
+                                'Error': str(e)
+                            })
+                        
+                        progress_bar.progress((idx + 1) / len(batch_df))
+                    
+                    status_text.text("✅ Batch processing complete!")
+                    
+                    # Create results dataframe
+                    results_df = pd.DataFrame(results_list)
+                    
+                    # Display results
+                    st.markdown("---")
+                    st.markdown("## Batch Results")
+                    
+                    # Summary statistics
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    successful = len(results_df[results_df.get('Design_Status', '') != ''])
+                    good = len(results_df[results_df.get('Design_Status', '') == 'Good'])
+                    acceptable = len(results_df[results_df.get('Design_Status', '') == 'Acceptable'])
+                    failure = len(results_df[results_df.get('Design_Status', '') == 'Early Failure'])
+                    
+                    with col1:
+                        st.metric("Total Cases", len(results_df))
+                    with col2:
+                        st.metric("Good Designs", good)
+                    with col3:
+                        st.metric("Acceptable", acceptable)
+                    with col4:
+                        st.metric("Early Failure", failure)
+                    
+                    # Show results table
+                    st.dataframe(results_df, use_container_width=True, hide_index=True)
+                    
+                    # Download results
+                    csv_results = results_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Results CSV",
+                        data=csv_results,
+                        file_name="batch_predictions_results.csv",
+                        mime="text/csv"
+                    )
+                    
+                    # Visualization
+                    if successful > 0:
+                        st.markdown("---")
+                        st.markdown("## Results Visualization")
+                        
+                        # Sort by cracking
+                        plot_df = results_df[results_df.get('Predicted_Cracking_%', 0).notna()].copy()
+                        plot_df = plot_df.sort_values('Predicted_Cracking_%')
+                        
+                        fig = go.Figure()
+                        
+                        # Add bars colored by status
+                        colors = {
+                            'Good': 'green',
+                            'Acceptable': 'orange', 
+                            'Early Failure': 'red'
+                        }
+                        
+                        for status in ['Good', 'Acceptable', 'Early Failure']:
+                            mask = plot_df['Design_Status'] == status
+                            if mask.any():
+                                fig.add_trace(go.Bar(
+                                    x=plot_df[mask]['Case_Name'],
+                                    y=plot_df[mask]['Predicted_Cracking_%'],
+                                    name=status,
+                                    marker_color=colors[status]
+                                ))
+                        
+                        # Add threshold lines
+                        fig.add_hline(y=15, line_dash="dash", line_color="green", 
+                                     annotation_text="Good/Acceptable (15%)")
+                        fig.add_hline(y=30, line_dash="dash", line_color="red",
+                                     annotation_text="Acceptable/Failure (30%)")
+                        
+                        fig.update_layout(
+                            title="Predicted Cracking by Design Case",
+                            xaxis_title="Case Name",
+                            yaxis_title="Predicted Cracking (%)",
+                            barmode='group',
+                            height=500
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+            except Exception as e:
+                st.error(f"Error processing file: {e}")
+                st.error("Please check that your CSV matches the template format")
     
     # Footer
     st.markdown("---")
