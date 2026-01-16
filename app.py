@@ -287,7 +287,7 @@ else:
             model_spread = max(pred_xgb, pred_lgb, pred_rf) - min(pred_xgb, pred_lgb, pred_rf)
             if model_spread < 25:
                 confidence = "High"
-            elif model_spread <= 50:
+            elif model_spread <= 40:
                 confidence = "Medium"
             else:
                 confidence = "Low"
@@ -363,12 +363,12 @@ else:
                       - The prediction is highly reliable
                       - You can proceed with confidence in the results
                     
-                    - **Medium Confidence** (Model Spread 25-50%):
+                    - **Medium Confidence** (Model Spread 25-40%):
                       - Models show moderate agreement
                       - The prediction is reasonably reliable
                       - Consider the results carefully and verify assumptions
                     
-                    - **Low Confidence** (Model Spread > 50%):
+                    - **Low Confidence** (Model Spread > 40%):
                       - Models disagree significantly
                       - Use caution when interpreting results
                       - May indicate inputs outside typical training ranges
@@ -1054,7 +1054,7 @@ else:
                             model_spread = max(pred_xgb, pred_lgb, pred_rf) - min(pred_xgb, pred_lgb, pred_rf)
                             if model_spread < 25:
                                 confidence = "High"
-                            elif model_spread <= 50:
+                            elif model_spread <= 40:
                                 confidence = "Medium"
                             else:
                                 confidence = "Low"
