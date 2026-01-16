@@ -42,26 +42,6 @@ binder_data = {
     ('76-22', 'Type D'): (4.6659E-06, 3.9248),
     ('64-28', 'Type D'): (2.4914E-06, 4.0969),
     ('70-28', 'Type D'): (2.9215E-06, 4.0532),
-    ('64-22', 'Superpave B'): (6.0544E-06, 3.8541),
-    ('70-22', 'Superpave B'): (6.4359E-06, 3.8374),
-    ('76-22', 'Superpave B'): (6.8551E-06, 3.8201),
-    ('64-28', 'Superpave B'): (3.0241E-06, 4.0440),
-    ('70-28', 'Superpave B'): (3.6074E-06, 3.9956),
-    ('64-22', 'Superpave C'): (4.9238E-06, 3.9100),
-    ('70-22', 'Superpave C'): (5.2041E-06, 3.8948),
-    ('76-22', 'Superpave C'): (5.5095E-06, 3.8792),
-    ('64-28', 'Superpave C'): (2.6934E-06, 4.0755),
-    ('70-28', 'Superpave C'): (3.1804E-06, 4.0299),
-    ('64-22', 'Superpave D'): (4.0044E-06, 3.9667),
-    ('70-22', 'Superpave D'): (4.2081E-06, 3.9531),
-    ('76-22', 'Superpave D'): (4.4280E-06, 3.9391),
-    ('64-28', 'Superpave D'): (2.3989E-06, 4.1073),
-    ('70-28', 'Superpave D'): (2.8039E-06, 4.0645),
-    ('76-22', 'SMA-C'): (9.2769E-08, 4.9996),
-    ('76-22', 'SMA-D'): (8.1315E-08, 5.0358),
-    ('76-22', 'SMA-F'): (6.0576E-08, 5.1166),
-    ('70-28', 'SMA-C'): (9.2769E-08, 4.9996),
-    ('70-28', 'SMA-D'): (8.1315E-08, 5.0358),
 }
 
 # AC Modulus lookup table (average values from training data by PG grade and Mix Type)
@@ -73,10 +53,6 @@ ac_modulus_lookup = {
     ('70-22', 'Type D'): 1346.05,
     ('76-22', 'Type D'): 1449.94,
     ('64-28', 'Type D'): 1101.56,
-    ('70-22', 'Superpave B'): 1389.46,
-    ('70-28', 'Superpave C'): 1244.88,
-    ('76-22', 'Superpave D'): 1346.05,
-    ('70-28', 'Superpave D'): 1152.44,
 }
 
 # Default AC Modulus for combinations not in training data
@@ -229,11 +205,8 @@ else:
             A_raw, n = binder_data[(selected_pg, selected_mix)]
             A_scaled = A_raw * 1e6
             
-            # Get AC_Modulus from lookup table
+            # Get AC_Modulus from lookup table (not displayed to user)
             ac_modulus = ac_modulus_lookup.get((selected_pg, selected_mix), DEFAULT_AC_MODULUS)
-            
-            # Show AC Modulus (auto-calculated, not editable)
-            st.info(f"AC Modulus: {ac_modulus:.0f} ksi (auto-calculated from mix selection)")
             
             rap_percent = st.number_input("RAP Content (%)", min_value=0, max_value=30, value=0, step=5)
         
@@ -593,54 +566,193 @@ else:
     # ============================================================================
     with tab2:
         st.title("Design Comparison Tool")
-        st.markdown("Compare your base design with beefed-up and thinned alternatives")
+        st.markdown("Compare your base design with two design alternatives")
         
         if 'base_inputs' not in st.session_state:
             st.info("Please run a prediction in the Design Input tab first to enable comparison.")
         else:
             base = st.session_state['base_inputs']
-            total_esals = st.session_state.get('total_esals', 2000000)
+            base_total_esals = st.session_state.get('total_esals', 2000000)
             design_life = st.session_state['predictions']['design_life']
             
-            st.markdown("### Design Alternatives")
+            st.markdown("### Design Alternatives Input")
+            st.caption(f"All designs will use the same design life: {design_life} years")
             
             col1, col2, col3 = st.columns(3)
             
+            # Column 1: Base Design (read-only display)
             with col1:
-                st.markdown("**Base Design**")
-                st.write(f"AC Thickness: {base['AC_Thickness']} in")
-                st.write(f"Base Thickness: {base['Base_Thickness']} in")
+                st.markdown("#### Base Design")
+                st.markdown(f"**Design Life:** {design_life} years")
+                st.markdown(f"**PG Grade:** {st.session_state.get('selected_pg', 'N/A')}")
+                st.markdown(f"**Mix Type:** Type {base.get('Mix_Type', 'N/A')}")
+                st.markdown(f"**AC Thickness:** {base['AC_Thickness']} in")
+                st.markdown(f"**Base Thickness:** {base['Base_Thickness']} in")
+                st.markdown(f"**Base Modulus:** {base['Base_Modulus']} ksi")
+                st.markdown(f"**Subgrade Modulus:** {base['Subgrade_Modulus']} ksi")
+                st.markdown(f"**RAP Content:** {base['RAP_Percent']}%")
+                st.markdown(f"**Total ESALs:** {base_total_esals:,}")
             
+            # Column 2: Alternative 1 (user inputs)
             with col2:
-                st.markdown("**Beefed-Up Design**")
-                beefed_ac = min(base['AC_Thickness'] + 1.0, 7.0)
-                st.write(f"AC Thickness: {beefed_ac} in (+1.0 in)")
-                st.write(f"Base Thickness: {base['Base_Thickness']} in")
+                st.markdown("#### Alternative 1")
+                st.markdown(f"**Design Life:** {design_life} years")
+                
+                pg_options = sorted(list(set([key[0] for key in binder_data.keys()])))
+                alt1_pg = st.selectbox("PG Grade", pg_options, index=0, key="alt1_pg")
+                
+                available_mix_types_alt1 = sorted(list(set([key[1] for key in binder_data.keys() if key[0] == alt1_pg])))
+                alt1_mix = st.selectbox("Mix Type", available_mix_types_alt1, index=0, key="alt1_mix")
+                
+                alt1_ac_thickness = st.selectbox(
+                    "AC Thickness (in)", 
+                    [4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0], 
+                    index=3,
+                    key="alt1_ac"
+                )
+                
+                alt1_base_thickness = st.selectbox(
+                    "Base Thickness (in)", 
+                    [8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0], 
+                    index=4,
+                    key="alt1_base"
+                )
+                
+                alt1_base_modulus = st.number_input(
+                    "Base Modulus (ksi)", 
+                    min_value=30, max_value=300, value=37, step=30,
+                    key="alt1_base_mod"
+                )
+                
+                alt1_subgrade_modulus = st.number_input(
+                    "Subgrade Modulus (ksi)", 
+                    min_value=5, max_value=20, value=10, step=5,
+                    key="alt1_sub_mod"
+                )
+                
+                alt1_rap = st.number_input(
+                    "RAP Content (%)", 
+                    min_value=0, max_value=30, value=0, step=5,
+                    key="alt1_rap"
+                )
+                
+                alt1_traffic = st.selectbox(
+                    "Traffic Level", 
+                    ["Light", "Medium", "Heavy", "Custom"], 
+                    index=1,
+                    key="alt1_traffic"
+                )
+                
+                if alt1_traffic == "Light":
+                    alt1_total_esals = 500000
+                    st.caption(f"Total ESALs: {alt1_total_esals:,}")
+                elif alt1_traffic == "Medium":
+                    alt1_total_esals = 2000000
+                    st.caption(f"Total ESALs: {alt1_total_esals:,}")
+                elif alt1_traffic == "Heavy":
+                    alt1_total_esals = 5000000
+                    st.caption(f"Total ESALs: {alt1_total_esals:,}")
+                else:
+                    alt1_total_esals = st.number_input(
+                        "Total Design ESALs", 
+                        100000, 10000000, 2000000, 100000,
+                        key="alt1_esals"
+                    )
             
+            # Column 3: Alternative 2 (user inputs)
             with col3:
-                st.markdown("**Thinned Design**")
-                thinned_ac = max(base['AC_Thickness'] - 1.0, 4.0)
-                st.write(f"AC Thickness: {thinned_ac} in (-1.0 in)")
-                st.write(f"Base Thickness: {base['Base_Thickness']} in")
+                st.markdown("#### Alternative 2")
+                st.markdown(f"**Design Life:** {design_life} years")
+                
+                alt2_pg = st.selectbox("PG Grade", pg_options, index=0, key="alt2_pg")
+                
+                available_mix_types_alt2 = sorted(list(set([key[1] for key in binder_data.keys() if key[0] == alt2_pg])))
+                alt2_mix = st.selectbox("Mix Type", available_mix_types_alt2, index=0, key="alt2_mix")
+                
+                alt2_ac_thickness = st.selectbox(
+                    "AC Thickness (in)", 
+                    [4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0], 
+                    index=3,
+                    key="alt2_ac"
+                )
+                
+                alt2_base_thickness = st.selectbox(
+                    "Base Thickness (in)", 
+                    [8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0], 
+                    index=4,
+                    key="alt2_base"
+                )
+                
+                alt2_base_modulus = st.number_input(
+                    "Base Modulus (ksi)", 
+                    min_value=30, max_value=300, value=37, step=30,
+                    key="alt2_base_mod"
+                )
+                
+                alt2_subgrade_modulus = st.number_input(
+                    "Subgrade Modulus (ksi)", 
+                    min_value=5, max_value=20, value=10, step=5,
+                    key="alt2_sub_mod"
+                )
+                
+                alt2_rap = st.number_input(
+                    "RAP Content (%)", 
+                    min_value=0, max_value=30, value=0, step=5,
+                    key="alt2_rap"
+                )
+                
+                alt2_traffic = st.selectbox(
+                    "Traffic Level", 
+                    ["Light", "Medium", "Heavy", "Custom"], 
+                    index=1,
+                    key="alt2_traffic"
+                )
+                
+                if alt2_traffic == "Light":
+                    alt2_total_esals = 500000
+                    st.caption(f"Total ESALs: {alt2_total_esals:,}")
+                elif alt2_traffic == "Medium":
+                    alt2_total_esals = 2000000
+                    st.caption(f"Total ESALs: {alt2_total_esals:,}")
+                elif alt2_traffic == "Heavy":
+                    alt2_total_esals = 5000000
+                    st.caption(f"Total ESALs: {alt2_total_esals:,}")
+                else:
+                    alt2_total_esals = st.number_input(
+                        "Total Design ESALs", 
+                        100000, 10000000, 2000000, 100000,
+                        key="alt2_esals"
+                    )
             
-            if st.button("Compare Designs", type="primary", key="compare_button"):
+            # Compare All Designs button
+            st.markdown("---")
+            if st.button("Compare All Designs", type="primary", key="compare_button"):
+                # Get binder parameters for alternatives
+                alt1_A_raw, alt1_n = binder_data[(alt1_pg, alt1_mix)]
+                alt1_A_scaled = alt1_A_raw * 1e6
+                alt1_ac_modulus = ac_modulus_lookup.get((alt1_pg, alt1_mix), DEFAULT_AC_MODULUS)
+                
+                alt2_A_raw, alt2_n = binder_data[(alt2_pg, alt2_mix)]
+                alt2_A_scaled = alt2_A_raw * 1e6
+                alt2_ac_modulus = ac_modulus_lookup.get((alt2_pg, alt2_mix), DEFAULT_AC_MODULUS)
+                
                 # Generate progression for all three designs
                 years = list(range(design_life + 1))
                 
                 progressions = {
                     'Base': [],
-                    'Beefed-Up': [],
-                    'Thinned': []
+                    'Alternative 1': [],
+                    'Alternative 2': []
                 }
                 
                 for year in years:
                     year_months = year * 12
-                    year_esals = (total_esals / 240) * year_months if year > 0 else 0
                     
                     # Base design
-                    base_inputs = {
+                    base_year_esals = (base_total_esals / 240) * year_months if year > 0 else 0
+                    base_inputs_year = {
                         'Pavement_Age_Months': year_months,
-                        'Cumulative_Monthly_ESALs': year_esals,
+                        'Cumulative_Monthly_ESALs': base_year_esals,
                         'AC_Thickness': base['AC_Thickness'],
                         'RAP_Percent': base['RAP_Percent'],
                         'A': base['A'],
@@ -650,40 +762,42 @@ else:
                         'Base_Modulus': base['Base_Modulus'],
                         'Subgrade_Modulus': base['Subgrade_Modulus']
                     }
-                    b_xgb, b_lgb, b_rf = predict_cracking(base_inputs, scaler, xgb_model, lgb_model, rf_model)
+                    b_xgb, b_lgb, b_rf = predict_cracking(base_inputs_year, scaler, xgb_model, lgb_model, rf_model)
                     progressions['Base'].append((b_xgb + b_lgb + b_rf) / 3)
                     
-                    # Beefed-up design
-                    beefed_inputs = {
+                    # Alternative 1
+                    alt1_year_esals = (alt1_total_esals / 240) * year_months if year > 0 else 0
+                    alt1_inputs_year = {
                         'Pavement_Age_Months': year_months,
-                        'Cumulative_Monthly_ESALs': year_esals,
-                        'AC_Thickness': beefed_ac,
-                        'RAP_Percent': base['RAP_Percent'],
-                        'A': base['A'],
-                        'n': base['n'],
-                        'AC_Modulus_ksi': base['AC_Modulus_ksi'],
-                        'Base_Thickness': base['Base_Thickness'],
-                        'Base_Modulus': base['Base_Modulus'],
-                        'Subgrade_Modulus': base['Subgrade_Modulus']
+                        'Cumulative_Monthly_ESALs': alt1_year_esals,
+                        'AC_Thickness': alt1_ac_thickness,
+                        'RAP_Percent': alt1_rap,
+                        'A': alt1_A_scaled,
+                        'n': alt1_n,
+                        'AC_Modulus_ksi': alt1_ac_modulus,
+                        'Base_Thickness': alt1_base_thickness,
+                        'Base_Modulus': alt1_base_modulus,
+                        'Subgrade_Modulus': alt1_subgrade_modulus
                     }
-                    bf_xgb, bf_lgb, bf_rf = predict_cracking(beefed_inputs, scaler, xgb_model, lgb_model, rf_model)
-                    progressions['Beefed-Up'].append((bf_xgb + bf_lgb + bf_rf) / 3)
+                    a1_xgb, a1_lgb, a1_rf = predict_cracking(alt1_inputs_year, scaler, xgb_model, lgb_model, rf_model)
+                    progressions['Alternative 1'].append((a1_xgb + a1_lgb + a1_rf) / 3)
                     
-                    # Thinned design
-                    thinned_inputs = {
+                    # Alternative 2
+                    alt2_year_esals = (alt2_total_esals / 240) * year_months if year > 0 else 0
+                    alt2_inputs_year = {
                         'Pavement_Age_Months': year_months,
-                        'Cumulative_Monthly_ESALs': year_esals,
-                        'AC_Thickness': thinned_ac,
-                        'RAP_Percent': base['RAP_Percent'],
-                        'A': base['A'],
-                        'n': base['n'],
-                        'AC_Modulus_ksi': base['AC_Modulus_ksi'],
-                        'Base_Thickness': base['Base_Thickness'],
-                        'Base_Modulus': base['Base_Modulus'],
-                        'Subgrade_Modulus': base['Subgrade_Modulus']
+                        'Cumulative_Monthly_ESALs': alt2_year_esals,
+                        'AC_Thickness': alt2_ac_thickness,
+                        'RAP_Percent': alt2_rap,
+                        'A': alt2_A_scaled,
+                        'n': alt2_n,
+                        'AC_Modulus_ksi': alt2_ac_modulus,
+                        'Base_Thickness': alt2_base_thickness,
+                        'Base_Modulus': alt2_base_modulus,
+                        'Subgrade_Modulus': alt2_subgrade_modulus
                     }
-                    t_xgb, t_lgb, t_rf = predict_cracking(thinned_inputs, scaler, xgb_model, lgb_model, rf_model)
-                    progressions['Thinned'].append((t_xgb + t_lgb + t_rf) / 3)
+                    a2_xgb, a2_lgb, a2_rf = predict_cracking(alt2_inputs_year, scaler, xgb_model, lgb_model, rf_model)
+                    progressions['Alternative 2'].append((a2_xgb + a2_lgb + a2_rf) / 3)
                 
                 # Plot comparison
                 fig = go.Figure()
@@ -691,24 +805,24 @@ else:
                 fig.add_trace(go.Scatter(
                     x=years, y=progressions['Base'],
                     mode='lines+markers',
-                    name=f'Base ({base["AC_Thickness"]} in AC)',
+                    name=f'Base Design',
                     line=dict(color='blue', width=3),
                     marker=dict(size=8)
                 ))
                 
                 fig.add_trace(go.Scatter(
-                    x=years, y=progressions['Beefed-Up'],
+                    x=years, y=progressions['Alternative 1'],
                     mode='lines+markers',
-                    name=f'Beefed-Up ({beefed_ac} in AC)',
+                    name=f'Alternative 1',
                     line=dict(color='green', width=3),
                     marker=dict(size=8)
                 ))
                 
                 fig.add_trace(go.Scatter(
-                    x=years, y=progressions['Thinned'],
+                    x=years, y=progressions['Alternative 2'],
                     mode='lines+markers',
-                    name=f'Thinned ({thinned_ac} in AC)',
-                    line=dict(color='red', width=3),
+                    name=f'Alternative 2',
+                    line=dict(color='orange', width=3),
                     marker=dict(size=8)
                 ))
                 
@@ -731,18 +845,47 @@ else:
                 
                 final_year_idx = design_life
                 summary_data = {
-                    'Design': ['Base', 'Beefed-Up', 'Thinned'],
-                    'AC Thickness': [f"{base['AC_Thickness']} in", f"{beefed_ac} in", f"{thinned_ac} in"],
-                    f'Cracking at {design_life} Years': [
-                        f"{progressions['Base'][final_year_idx]:.2f}%",
-                        f"{progressions['Beefed-Up'][final_year_idx]:.2f}%",
-                        f"{progressions['Thinned'][final_year_idx]:.2f}%"
+                    'Design': ['Base', 'Alternative 1', 'Alternative 2'],
+                    'PG Grade': [
+                        st.session_state.get('selected_pg', 'N/A'),
+                        alt1_pg,
+                        alt2_pg
+                    ],
+                    'Mix Type': [
+                        'Type ' + str(base.get('Mix_Type', 'N/A')),
+                        alt1_mix,
+                        alt2_mix
+                    ],
+                    'AC Thickness (in)': [
+                        base['AC_Thickness'],
+                        alt1_ac_thickness,
+                        alt2_ac_thickness
+                    ],
+                    'Base Thickness (in)': [
+                        base['Base_Thickness'],
+                        alt1_base_thickness,
+                        alt2_base_thickness
+                    ],
+                    'RAP (%)': [
+                        base['RAP_Percent'],
+                        alt1_rap,
+                        alt2_rap
+                    ],
+                    'Total ESALs': [
+                        f"{base_total_esals:,}",
+                        f"{alt1_total_esals:,}",
+                        f"{alt2_total_esals:,}"
+                    ],
+                    f'Cracking at {design_life} Years (%)': [
+                        f"{progressions['Base'][final_year_idx]:.2f}",
+                        f"{progressions['Alternative 1'][final_year_idx]:.2f}",
+                        f"{progressions['Alternative 2'][final_year_idx]:.2f}"
                     ]
                 }
                 
                 # Add status
                 statuses = []
-                for design in ['Base', 'Beefed-Up', 'Thinned']:
+                for design in ['Base', 'Alternative 1', 'Alternative 2']:
                     crack = progressions[design][final_year_idx]
                     if crack < 15:
                         statuses.append('Good')
@@ -751,7 +894,7 @@ else:
                     else:
                         statuses.append('Early Failure')
                 
-                summary_data['Status'] = statuses
+                summary_data['Design Status'] = statuses
                 
                 st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
                 
@@ -759,15 +902,17 @@ else:
                 st.markdown("### Key Insights")
                 
                 base_final = progressions['Base'][final_year_idx]
-                beefed_final = progressions['Beefed-Up'][final_year_idx]
-                thinned_final = progressions['Thinned'][final_year_idx]
+                alt1_final = progressions['Alternative 1'][final_year_idx]
+                alt2_final = progressions['Alternative 2'][final_year_idx]
                 
-                reduction = base_final - beefed_final
-                increase = thinned_final - base_final
+                # Find best performing design
+                best_design = min([('Base', base_final), ('Alternative 1', alt1_final), ('Alternative 2', alt2_final)], key=lambda x: x[1])
+                worst_design = max([('Base', base_final), ('Alternative 1', alt1_final), ('Alternative 2', alt2_final)], key=lambda x: x[1])
                 
-                st.markdown(f"- Increasing AC thickness by 1 inch reduces cracking by **{reduction:.2f}%**")
-                st.markdown(f"- Decreasing AC thickness by 1 inch increases cracking by **{increase:.2f}%**")
-                st.markdown(f"- Difference between beefed-up and thinned designs: **{thinned_final - beefed_final:.2f}%**")
+                st.markdown(f"- **Best performing design:** {best_design[0]} with {best_design[1]:.2f}% cracking")
+                st.markdown(f"- **Worst performing design:** {worst_design[0]} with {worst_design[1]:.2f}% cracking")
+                st.markdown(f"- **Range of predicted cracking:** {best_design[1]:.2f}% to {worst_design[1]:.2f}% (difference of {worst_design[1] - best_design[1]:.2f}%)")
+    
     
     # ============================================================================
     # TAB 3: BATCH PROCESSING
