@@ -285,9 +285,9 @@ else:
             
             # Calculate model confidence
             model_spread = max(pred_xgb, pred_lgb, pred_rf) - min(pred_xgb, pred_lgb, pred_rf)
-            if model_spread < 15:
+            if model_spread < 25:
                 confidence = "High"
-            elif model_spread <= 30:
+            elif model_spread <= 50:
                 confidence = "Medium"
             else:
                 confidence = "Low"
@@ -358,17 +358,17 @@ else:
                     ---
                     **Confidence Levels:**
                     
-                    - **High Confidence** (Model Spread < 15%):
+                    - **High Confidence** (Model Spread < 25%):
                       - All three models agree closely on the prediction
                       - The prediction is highly reliable
                       - You can proceed with confidence in the results
                     
-                    - **Medium Confidence** (Model Spread 15-30%):
+                    - **Medium Confidence** (Model Spread 25-50%):
                       - Models show moderate agreement
                       - The prediction is reasonably reliable
                       - Consider the results carefully and verify assumptions
                     
-                    - **Low Confidence** (Model Spread > 30%):
+                    - **Low Confidence** (Model Spread > 50%):
                       - Models disagree significantly
                       - Use caution when interpreting results
                       - May indicate inputs outside typical training ranges
@@ -1052,9 +1052,9 @@ else:
                             
                             # Calculate confidence
                             model_spread = max(pred_xgb, pred_lgb, pred_rf) - min(pred_xgb, pred_lgb, pred_rf)
-                            if model_spread < 15:
+                            if model_spread < 25:
                                 confidence = "High"
-                            elif model_spread <= 30:
+                            elif model_spread <= 50:
                                 confidence = "Medium"
                             else:
                                 confidence = "Low"
